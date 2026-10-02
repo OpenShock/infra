@@ -1,0 +1,64 @@
+name: Build GeoIP image
+
+on:
+  # MaxMind publishes GeoLite2 updates on Tuesdays and Fridays.
+  schedule:
+    - cron: '0 6 * * 3,6'
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - images/geoip/**
+      - .github/workflows/geoip.yml
+
+env:
+  IMAGE: ghcr.io/openshock/geoip
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download GeoLite2 databases
+        working-directory: images/geoip
+        run: |
+          mkdir -p data
+          docker run --rm \
+            -e GEOIPUPDATE_ACCOUNT_ID="${{ secrets.MAXMIND_ACCOUNT_ID }}" \
+            -e GEOIPUPDATE_LICENSE_KEY="${{ secrets.MAXMIND_LICENSE_KEY }}" \
+            -e GEOIPUPDATE_EDITION_IDS="GeoLite2-ASN GeoLite2-City" \
+            -e GEOIPUPDATE_DB_DIR=/data \
+            -v "$PWD/data:/data" \
+            ghcr.io/maxmind/geoipupdate:v7
+          mv data/*.mmdb . && ls -la
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        working-directory: images/geoip
+        run: |
+          TAG="$(date -u +%Y%m%d)"
+          docker build -t "$IMAGE:latest" -t "$IMAGE:$TAG" .
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+
+  cleanup:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      # Each version is ~70MB; keep a few for rollback and drop the rest.
+      - uses: actions/delete-package-versions@v5
+        with:
+          package-name: geoip
+          package-type: container
+          min-versions-to-keep: 4
