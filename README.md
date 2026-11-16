@@ -5,9 +5,15 @@ Small infrastructure images and jobs for OpenShock. Each image lives in
 (path-filtered, so images build independently) and is published as
 `ghcr.io/openshock/<name>`.
 
-Packages inherit this repo's **private** visibility. Cluster nodes pull them
-with the `ghcr-pull` secret from `kubernetes-cluster-gitops`
+Package visibility is set per image (see below). Cluster nodes pull private
+ones with the `ghcr-pull` secret from `kubernetes-cluster-gitops`
 (`OpenShock/AppSecrets`).
+
+## License
+
+The contents of this repo are [MIT](LICENSE). That covers the Dockerfiles and
+workflows only, not the third-party software and data baked into the images,
+which keep their own licenses.
 
 ## Images
 
@@ -21,7 +27,7 @@ when they restart.
 
 Secrets: `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY`.
 
-Must stay private: the GeoLite2 EULA forbids redistributing the databases.
+**Private.** The GeoLite2 EULA forbids redistributing the databases.
 
 ### timescaledb
 
@@ -47,4 +53,12 @@ spec:
           reference: ghcr.io/openshock/timescaledb:2.31.0-18-trixie
 ```
 
-Must stay private: the Timescale License forbids redistributing it.
+**Public.** The image carries the TimescaleDB core (Apache-2.0) and the `tsl`
+module under the
+[Timescale License](https://github.com/timescale/timescaledb/blob/main/tsl/LICENSE-TIMESCALE),
+declared in its `org.opencontainers.image.licenses` label as
+`Apache-2.0 AND LicenseRef-Timescale`. The Timescale License (2.1(c)) allows
+redistributing the binaries in unmodified standalone form, so this image only
+copies them out of Timescale's official apt packages; don't patch or rebuild
+them. It forbids offering TimescaleDB as a database-as-a-service or
+distributing it for that use.

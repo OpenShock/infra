@@ -16,6 +16,9 @@ FROM scratch
 ARG PG_MAJOR=18
 LABEL org.opencontainers.image.source="https://github.com/OpenShock/infra"
 LABEL org.opencontainers.image.description="TimescaleDB Community edition as a CloudNativePG image volume extension"
+# Core is Apache-2.0, the tsl module is under the Timescale License (no SPDX id):
+# https://github.com/timescale/timescaledb/blob/main/tsl/LICENSE-TIMESCALE
+LABEL org.opencontainers.image.licenses="Apache-2.0 AND LicenseRef-Timescale"
 
 COPY --from=builder /usr/lib/postgresql/${PG_MAJOR}/lib/timescaledb* /lib/
 COPY --from=builder /usr/share/postgresql/${PG_MAJOR}/extension/timescaledb* /share/extension/
