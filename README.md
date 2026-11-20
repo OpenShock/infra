@@ -50,7 +50,7 @@ spec:
     extensions:
       - name: timescaledb
         image:
-          reference: ghcr.io/openshock/timescaledb:2.31.0-18-trixie
+          reference: ghcr.io/openshock/timescaledb:2.32.1-18-trixie
 ```
 
 **Public.** The image carries the TimescaleDB core (Apache-2.0) and the `tsl`
@@ -62,3 +62,21 @@ redistributing the binaries in unmodified standalone form, so this image only
 copies them out of Timescale's official apt packages; don't patch or rebuild
 them. It forbids offering TimescaleDB as a database-as-a-service or
 distributing it for that use.
+
+### postgres-timescaledb
+
+`ghcr.io/openshock/postgres-timescaledb:<timescaledb>-<pg major>.<minor>-<debian>`:
+the official `postgres` image with the TimescaleDB Community edition installed
+and preloaded, used by the API repo's `docker-compose.yml` (self-hosting) and
+`Dev/docker-compose.yml`. It keeps the official image's Debian base, so data
+directories created by plain `postgres:18` keep their collations and can be
+reused.
+
+Tags are immutable. A daily run checks `postgres:<pg major>-<debian>` and
+publishes a new tag when it has a Postgres minor release that isn't built yet;
+bump the tag in both compose files to roll it out. New TimescaleDB versions
+are manual: bump `TIMESCALEDB_VERSION` in the workflow and the compose tags,
+then run `ALTER EXTENSION timescaledb UPDATE`.
+
+**Public.** Self-hosters pull it. Same licensing as `timescaledb` above: the
+binaries come unmodified from Timescale's apt packages.

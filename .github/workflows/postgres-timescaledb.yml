@@ -1,0 +1,98 @@
+name: Build Postgres TimescaleDB image
+
+on:
+  # Picks up Postgres minor releases
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - images/postgres-timescaledb/**
+      - .github/workflows/postgres-timescaledb.yml
+
+env:
+  IMAGE: ghcr.io/openshock/postgres-timescaledb
+  TIMESCALEDB_VERSION: 2.32.1
+  PG_MAJOR: 18
+  DEBIAN_RELEASE: trixie
+
+# Overlapping runs could both see a tag as missing and push it twice
+concurrency:
+  group: postgres-timescaledb
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    outputs:
+      base-digest: ${{ steps.check.outputs.base-digest }}
+      tag: ${{ steps.check.outputs.tag }}
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags are immutable: a Postgres minor release gets its own tag, an existing tag is never pushed again
+      - id: check
+        env:
+          BASE: postgres:${{ env.PG_MAJOR }}-${{ env.DEBIAN_RELEASE }}
+        run: |
+          set -euo pipefail
+          base_digest="$(docker buildx imagetools inspect "$BASE" --format '{{json .Manifest}}' | jq -r .digest)"
+          pg_version="$(docker buildx imagetools inspect "$BASE@$base_digest" --format '{{json .Image}}' \
+            | jq -r '(if has("config") then . else ."linux/amd64" end).config.Env[] | select(startswith("PG_VERSION=")) | ltrimstr("PG_VERSION=") | split("-")[0]')"
+          tag="$TIMESCALEDB_VERSION-$pg_version-$DEBIAN_RELEASE"
+
+          # Only a confirmed missing tag builds, any other registry error fails the run
+          if error="$(docker buildx imagetools inspect "$IMAGE:$tag" 2>&1 > /dev/null)"; then
+            build=false
+          elif grep -qi 'not found' <<< "$error"; then
+            build=true
+          else
+            echo "$error" >&2
+            exit 1
+          fi
+
+          echo "base $BASE@$base_digest is Postgres $pg_version, $IMAGE:$tag build: $build"
+          {
+            echo "base-digest=$base_digest"
+            echo "tag=$tag"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: images/postgres-timescaledb
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            BASE=postgres:${{ env.PG_MAJOR }}-${{ env.DEBIAN_RELEASE }}@${{ needs.check.outputs.base-digest }}
+            BASE_DIGEST=${{ needs.check.outputs.base-digest }}
+            TIMESCALEDB_VERSION=${{ env.TIMESCALEDB_VERSION }}
+          tags: ${{ env.IMAGE }}:${{ needs.check.outputs.tag }}
+          push: true
