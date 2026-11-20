@@ -50,7 +50,7 @@ spec:
     extensions:
       - name: timescaledb
         image:
-          reference: ghcr.io/openshock/timescaledb:2.31.0-18-trixie
+          reference: ghcr.io/openshock/timescaledb:2.32.1-18-trixie
 ```
 
 **Public.** The image carries the TimescaleDB core (Apache-2.0) and the `tsl`
