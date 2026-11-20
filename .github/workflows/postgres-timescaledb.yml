@@ -1,0 +1,86 @@
+name: Build Postgres TimescaleDB image
+
+on:
+  # Picks up Postgres minor releases
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - images/postgres-timescaledb/**
+      - .github/workflows/postgres-timescaledb.yml
+
+env:
+  IMAGE: ghcr.io/openshock/postgres-timescaledb
+  TIMESCALEDB_VERSION: 2.31.0
+  PG_MAJOR: 18
+  DEBIAN_RELEASE: trixie
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    outputs:
+      base-digest: ${{ steps.check.outputs.base-digest }}
+      tag: ${{ steps.check.outputs.tag }}
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags are immutable: a Postgres minor release gets its own tag, an existing tag is never pushed again
+      - id: check
+        env:
+          BASE: postgres:${{ env.PG_MAJOR }}-${{ env.DEBIAN_RELEASE }}
+        run: |
+          set -euo pipefail
+          base_digest="$(docker buildx imagetools inspect "$BASE" --format '{{json .Manifest}}' | jq -r .digest)"
+          pg_version="$(docker buildx imagetools inspect "$BASE@$base_digest" --format '{{json .Image}}' \
+            | jq -r '(if has("config") then . else ."linux/amd64" end).config.Env[] | select(startswith("PG_VERSION=")) | ltrimstr("PG_VERSION=") | split("-")[0]')"
+          tag="$TIMESCALEDB_VERSION-$pg_version-$DEBIAN_RELEASE"
+
+          build=true
+          if docker buildx imagetools inspect "$IMAGE:$tag" > /dev/null 2>&1; then build=false; fi
+
+          echo "base $BASE@$base_digest is Postgres $pg_version, $IMAGE:$tag build: $build"
+          {
+            echo "base-digest=$base_digest"
+            echo "tag=$tag"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: images/postgres-timescaledb
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            BASE=postgres:${{ env.PG_MAJOR }}-${{ env.DEBIAN_RELEASE }}@${{ needs.check.outputs.base-digest }}
+            BASE_DIGEST=${{ needs.check.outputs.base-digest }}
+            TIMESCALEDB_VERSION=${{ env.TIMESCALEDB_VERSION }}
+          tags: ${{ env.IMAGE }}:${{ needs.check.outputs.tag }}
+          push: true
