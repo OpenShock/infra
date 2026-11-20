@@ -17,6 +17,11 @@ env:
   PG_MAJOR: 18
   DEBIAN_RELEASE: trixie
 
+# Overlapping runs could both see a tag as missing and push it twice
+concurrency:
+  group: postgres-timescaledb
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -44,8 +49,15 @@ jobs:
             | jq -r '(if has("config") then . else ."linux/amd64" end).config.Env[] | select(startswith("PG_VERSION=")) | ltrimstr("PG_VERSION=") | split("-")[0]')"
           tag="$TIMESCALEDB_VERSION-$pg_version-$DEBIAN_RELEASE"
 
-          build=true
-          if docker buildx imagetools inspect "$IMAGE:$tag" > /dev/null 2>&1; then build=false; fi
+          # Only a confirmed missing tag builds, any other registry error fails the run
+          if error="$(docker buildx imagetools inspect "$IMAGE:$tag" 2>&1 > /dev/null)"; then
+            build=false
+          elif grep -qi 'not found' <<< "$error"; then
+            build=true
+          else
+            echo "$error" >&2
+            exit 1
+          fi
 
           echo "base $BASE@$base_digest is Postgres $pg_version, $IMAGE:$tag build: $build"
           {
