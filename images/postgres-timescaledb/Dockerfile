@@ -1,6 +1,6 @@
 # postgres with the TimescaleDB Community edition, for docker compose (self-hosting and development). Built on the
 # official Debian image so existing data directories keep their glibc/ICU collations; BASE pins the Debian release.
-ARG BASE=postgres:18-trixie
+ARG BASE=postgres:19-trixie
 FROM $BASE
 
 ARG TIMESCALEDB_VERSION
