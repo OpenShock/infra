@@ -1,6 +1,6 @@
 # CloudNativePG image volume extension with the TimescaleDB Community edition, CloudNativePG only publishes the
 # Apache-2 edition. BASE must match the cluster's imageName in PostgreSQL major and Debian release.
-ARG BASE=ghcr.io/cloudnative-pg/postgresql:18-minimal-trixie
+ARG BASE=ghcr.io/cloudnative-pg/postgresql:19-minimal-trixie
 FROM $BASE AS builder
 
 ARG PG_MAJOR=18
